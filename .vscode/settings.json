@@ -1,0 +1,20 @@
+{
+  "C_Cpp.errorSquiggles": "disabled",
+  "cmake.sourceDirectory": "C:/Semester 7/Skripsi/Program/centung/lib/ArduinoJson/extras/tests/Deprecated",
+  "editor.formatOnSave": true,
+  "C_Cpp.clang_format_fallbackStyle": "{ BasedOnStyle: Google, IndentWidth: 4, TabWidth: 4, ColumnLimit: 0, AllowShortFunctionsOnASingleLine: true, ContinuationIndentWidth: 4 }",
+  "files.associations": {
+    "*.ejs": "html",
+    "array": "cpp",
+    "deque": "cpp",
+    "list": "cpp",
+    "string": "cpp",
+    "unordered_map": "cpp",
+    "unordered_set": "cpp",
+    "vector": "cpp",
+    "string_view": "cpp",
+    "initializer_list": "cpp",
+    "cstddef": "cpp",
+    "limits": "cpp"
+  }
+}
