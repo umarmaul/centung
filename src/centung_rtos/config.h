@@ -17,15 +17,12 @@
 // =========================================================================
 // Variables
 // =========================================================================
-// NTP Variables
 const char* ntpServer = "pool.ntp.org";
 const long gmtOffset_sec = 25200;
 const int daylightOffset_sec = 0;
 
-// Test PING variable to Google
 const IPAddress remote_ip(8, 8, 8, 8);
 
-// Time Variables
 char timeHour[3];
 char timeMin[3];
 char timeSec[3];
@@ -34,11 +31,9 @@ char month[10];
 char year[5];
 char timeWeekDay[10];
 int dayInWeek;
+int volt;
+int fromLeft = 10;
 
-// Voltage Variable
-float volt = 0.0;
-
-// Date Variables
 String Day[7] = {"SU", "MO", "TU", "WE", "TH", "FR", "SA"};
 String SDay[7] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
 String Months[12] = {"January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"};
@@ -48,7 +43,6 @@ int dayInMonth = 0;
 int daysInMonth = 0;
 int firstDay = 0;
 
-// Display Variables
 int brightness = 255;
 int caw = 22;
 int cay = 20;
@@ -56,46 +50,6 @@ int cax = 150;
 int cah = 22;
 int seg = 0;
 long t = 0;
-
-// Shared Variables (Protected by Mutex)
-volatile float smoothedRoll = 0.0;
-volatile float smoothedPitch = 0.0;
-volatile float currentWeight = 0.0;
-volatile bool newDataReady = false;
-
-// Load Cell Variables
-const int calVal_eepromAdress = 0;
-const int tareOffsetVal_eepromAdress = 20;
-const int stabilizingtime = 2000;
-float calibrationValue = 1306.5337;
-float calibrationOffset = 8434937.00;
-boolean _tare = true;
-
-// Nasi Variables
-float KNasi1 = 0, KNasi2 = 0, KNasi3 = 0, KNasi4 = 0;
-float totalNasi_profile1 = 0, totalNasi_profile2 = 0, totalNasi_profile3 = 0, totalNasi_profile4 = 0;
-
-// MPU6050 Settings
-const uint8_t MPU6050_ADDR = 0x68;
-const float MPU_ACCEL_SCALE = 4096.0;  // Sesuai konfigurasi FS_SEL=1 (±8g)
-const float MPU_GYRO_SCALE = 65.5;     // Sesuai konfigurasi FS_SEL=1 (±500°/s)
-const int MPU_CALIBRATION_COUNT = 2000;
-float GyroBiasRoll = 0, GyroBiasPitch = 0, GyroBiasYaw = 0;
-
-// Kalman Filter Settings
-float KalmanUncertaintyAngleRoll = 2 * 2;
-float KalmanUncertaintyAnglePitch = 2 * 2;
-
-// Smoothing Settings
-const int SMOOTHING_WINDOW_SIZE = 10;
-float rollWindow[SMOOTHING_WINDOW_SIZE];
-float pitchWindow[SMOOTHING_WINDOW_SIZE];
-int smoothingIndex = 0;
-
-// State Variables (EDITED SOON)
-int ulang = 0, state = 0, cek_berat = 0;
-int centong = 0, adc = 0, simpan = 0, done_query = 0, waitUntilClick = 0;
-int tanggal = 0, bulan = 0;
 
 // =========================================================================
 // Pin Config
@@ -155,8 +109,6 @@ int tanggal = 0, bulan = 0;
 // =========================================================================
 /*wifi*/
 #define WIFI_CONNECT_WAIT_MAX (30 * 1000)
-#define CONNECT_TIMEOUT 30
-#define PORTAL_TIMEOUT 180
 
 /*TFT CONFIG*/
 #define LOADING_BACKGROUND 0xE73B
@@ -164,4 +116,3 @@ int tanggal = 0, bulan = 0;
 #define GRAY 0xB5B6
 #define ORANGE 0xC260
 #define COLOR_2 0x22CE
-#define FROM_LEFT 10
