@@ -1374,7 +1374,7 @@ void setup() {
                     Serial.printf("Document ID: %s\n", documentId.c_str());
 
                     // Delete the document
-                    deleteDocument(documentId);FIREBASE_PROJECT_ID
+                    deleteDocument(documentId);
                 }
                 Serial.printf("Total Documents: %d\n", doc3.size());
 

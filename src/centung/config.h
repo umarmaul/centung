@@ -15,8 +15,46 @@
 #define PROFILE_CODE_4 "A4"
 
 // =========================================================================
-// Variables
+// Enums and Structs
 // =========================================================================
+enum AppState {
+    STATE_PROFILE_SELECTION,
+    STATE_CHECK_ORIENTATION,
+    STATE_MEASURING,
+    STATE_CALIBRATION,
+    STATE_CHECK_WEIGHT,
+    STATE_DELETE_DOC,
+    STATE_PAIRING,
+    STATE_ALARM,
+    STATE_ERROR
+};
+
+struct SensorData {
+    float weight;
+    float roll;
+    float pitch;
+};
+
+struct ButtonEvent {
+    int buttonId;
+    int eventType;  // 0: click, 1: long press, 2: double click
+};
+
+struct HttpCommand {
+    int type;
+    float weight;
+    float roll;
+    float pitch;
+    String profile_code;
+};
+
+// =========================================================================
+// Global Variables
+// =========================================================================
+// Shared Variables
+AppState currentState = STATE_PROFILE_SELECTION;
+SensorData sensorData;
+
 // NTP Variables
 const char* ntpServer = "pool.ntp.org";
 const long gmtOffset_sec = 25200;
@@ -155,7 +193,7 @@ int tanggal = 0, bulan = 0;
 // =========================================================================
 /*wifi*/
 #define WIFI_CONNECT_WAIT_MAX (30 * 1000)
-#define CONNECT_TIMEOUT 30
+#define CONNECT_TIMEOUT 20
 #define PORTAL_TIMEOUT 180
 
 /*TFT CONFIG*/

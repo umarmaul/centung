@@ -6,7 +6,6 @@
 #include <TFT_eSPI.h>
 #include <WiFiManager.h>
 #include <Wire.h>
-#include <addons/TokenHelper.h>
 
 #include "FS.h"
 #include "OneButton.h"
