@@ -67,6 +67,7 @@ void IRAM_ATTR dataReadyISR();
 
 void setup() {
     Serial.begin(115200);
+    Serial.setTimeout(1000);  // Set a reasonable timeout for Serial
     Wire.begin(PIN_IIC_SDA, PIN_IIC_SCL);
     Wire.setClock(400000);
 
@@ -83,17 +84,16 @@ void setup() {
     rtc_gpio_hold_en((gpio_num_t)PUSH_BUTTON_3);
     esp_sleep_enable_ext0_wakeup((gpio_num_t)PUSH_BUTTON_3, 0);
 
-    Serial.println("Starting Centung...");
+    safePrintln("Starting Centung...");
 
     EEPROM.begin(512);
     EEPROM.get(calVal_eepromAdress, calibrationValue);
-    Serial.print("Calibration value: ");
-    Serial.println(calibrationValue);
+    safePrint("Calibration value: ");
+    safePrintln(String(calibrationValue));
 
-    EEPROM.begin(512);
     EEPROM.get(tareOffsetVal_eepromAdress, calibrationOffset);
-    Serial.print("Zero offset value: ");
-    Serial.println(calibrationOffset);
+    safePrint("Zero offset value: ");
+    safePrintln(String(calibrationOffset));
 
     attachInterrupt(digitalPinToInterrupt(PUSH_BUTTON_3), resetESP, FALLING);
     attachInterrupt(digitalPinToInterrupt(PIN_HX711_DATA), dataReadyISR, FALLING);
@@ -109,7 +109,7 @@ void setup() {
     xDataReadySemaphore = xSemaphoreCreateBinary();
 
     if (!xSerialMutex || !xFirebaseMutex || !xSensorDataMutex || !xStateMutex || !xI2CMutex || !xDataReadySemaphore) {
-        Serial.println("FATAL: Failed to create RTOS synchronization objects!");
+        safePrintln("FATAL: Failed to create RTOS synchronization objects!");
         while (1);
     }
 
@@ -142,11 +142,13 @@ void taskWiFiManagerCode(void *pvParameters) {
 
     if (!wifiConnected) {
         safePrintln("WiFiManager Failed to Connect.");
+        Serial.flush();  // Ensure all Serial output is sent before deep sleep
         esp_deep_sleep_start();
     } else {
         safePrintln("WiFiManager Connected!");
         safePrint("IP Address: ");
         safePrintln(WiFi.localIP().toString());
+        delay(100);  // Small delay to stabilize WiFi connection
     }
 
     // Notify the setup() task that WiFi setup attempt is complete
@@ -156,6 +158,10 @@ void taskWiFiManagerCode(void *pvParameters) {
     } else {
         safePrintln("Error: Could not get handle for setup task to notify.");
     }
+
+    // Flush Serial output and wait briefly to ensure all messages are printed
+    Serial.flush();
+    delay(50);
 
     vTaskDelete(NULL);  // Delete self
 }
@@ -173,15 +179,30 @@ void IRAM_ATTR dataReadyISR() {
 }
 
 void safePrintln(String msg) {
-    if (xSemaphoreTake(xSerialMutex, portMAX_DELAY) == pdTRUE) {
+    if (xSerialMutex == NULL) {
+        Serial.println("Error: Serial Mutex is NULL!");
+        return;
+    }
+    if (xSemaphoreTake(xSerialMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
         Serial.println(msg);
+        Serial.flush();  // Ensure immediate output
         xSemaphoreGive(xSerialMutex);
+    } else {
+        Serial.println("Error: Could not take Serial Mutex!");
     }
 }
+
 void safePrint(String msg) {
-    if (xSemaphoreTake(xSerialMutex, portMAX_DELAY) == pdTRUE) {
+    if (xSerialMutex == NULL) {
+        Serial.println("Error: Serial Mutex is NULL!");
+        return;
+    }
+    if (xSemaphoreTake(xSerialMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
         Serial.print(msg);
+        Serial.flush();  // Ensure immediate output
         xSemaphoreGive(xSerialMutex);
+    } else {
+        Serial.println("Error: Could not take Serial Mutex!");
     }
 }
 
