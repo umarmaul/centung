@@ -41,13 +41,11 @@ TFT_eSprite alarm_text = TFT_eSprite(&tft);
 TaskHandle_t h_taskSensorRead = NULL;
 TaskHandle_t h_taskButtonCheck = NULL;
 TaskHandle_t h_taskDisplayUpdate = NULL;
-TaskHandle_t h_taskFirebaseComms = NULL;
 TaskHandle_t h_taskMainLogic = NULL;
 TaskHandle_t h_taskTimeSync = NULL;
 TaskHandle_t h_setupTask = NULL;  // Handle for the main setup task
 
 SemaphoreHandle_t xSerialMutex = NULL;
-SemaphoreHandle_t xFirebaseMutex = NULL;
 SemaphoreHandle_t xSensorDataMutex = NULL;
 SemaphoreHandle_t xStateMutex = NULL;
 SemaphoreHandle_t xI2CMutex = NULL;
@@ -76,14 +74,15 @@ void IRAM_ATTR dataReadyISR();
 
 void setup() {
     Serial.begin(115200);
-    Serial.setTimeout(1000);  // Set a reasonable timeout for Serial
+    delay(5000);
+    Serial.println("Starting Centung...");
+
     Wire.begin(PIN_IIC_SDA, PIN_IIC_SCL);
     Wire.setClock(400000);
 
     pinMode(PIN_POWER_ON, OUTPUT);
     pinMode(PIN_BUZZER, OUTPUT);
     pinMode(PIN_BAT_VOLT, INPUT);
-    pinMode(PUSH_BUTTON_3, INPUT_PULLUP);
 
     digitalWrite(PIN_POWER_ON, HIGH);
 
@@ -94,8 +93,6 @@ void setup() {
     rtc_gpio_hold_en((gpio_num_t)PUSH_BUTTON_3);
     esp_sleep_enable_ext0_wakeup((gpio_num_t)PUSH_BUTTON_3, 0);
 
-    safePrintln("Starting Centung...");
-
     // attachInterrupt(digitalPinToInterrupt(PUSH_BUTTON_3), resetESP, FALLING);
     attachInterrupt(digitalPinToInterrupt(PIN_HX711_DATA), dataReadyISR, FALLING);
 
@@ -104,7 +101,6 @@ void setup() {
 
     // --- Create Mutexes and Semaphores FIRST ---
     xSerialMutex = xSemaphoreCreateMutex();
-    xFirebaseMutex = xSemaphoreCreateMutex();
     xSensorDataMutex = xSemaphoreCreateMutex();
     xStateMutex = xSemaphoreCreateMutex();
     xI2CMutex = xSemaphoreCreateMutex();
@@ -112,7 +108,7 @@ void setup() {
 
     xButtonQueue = xQueueCreate(10, sizeof(ButtonEvent));
 
-    if (!xSerialMutex || !xFirebaseMutex || !xSensorDataMutex || !xStateMutex || !xI2CMutex || !xDataReadySemaphore) {
+    if (!xSerialMutex || !xSensorDataMutex || !xStateMutex || !xI2CMutex || !xDataReadySemaphore) {
         safePrintln("FATAL: Failed to create RTOS synchronization objects!");
         while (1);
     }
@@ -146,10 +142,16 @@ void loop() {
 void setupEEPROM() {
     EEPROM.begin(512);
     EEPROM.get(calVal_eepromAdress, calibrationValue);
+    if (isnan(calibrationValue)) {
+        calibrationValue = 1306.5337;
+    }
     safePrint("Calibration value: ");
     safePrintln(String(calibrationValue));
 
     EEPROM.get(tareOffsetVal_eepromAdress, calibrationOffset);
+    if (isnan(calibrationOffset)) {
+        calibrationOffset = 8434937.00;
+    }
     safePrint("Zero offset value: ");
     safePrintln(String(calibrationOffset));
 }
@@ -213,11 +215,11 @@ void setupLoadCell() {
     LoadCell.start(stabilizingtime, _tare);
 
     if (LoadCell.getTareTimeoutFlag() || LoadCell.getSignalTimeoutFlag()) {
-        Serial.println("Timeout, check MCU>HX711 wiring and pin designations");
+        safePrintln("Timeout, check MCU>HX711 wiring and pin designations");
         esp_deep_sleep_start();
     } else {
         LoadCell.setCalFactor(calibrationValue);  // set calibration value (float)
-        Serial.println("Startup is complete");
+        safePrintln("Startup is complete");
     }
 }
 
@@ -261,9 +263,9 @@ void setupMPU6050() {
     Wire.write(0x00);  // Set to zero (wakes up the MPU-6050)
     Wire.endTransmission(true);
     delay(100);  // Tunggu sensor stabil
-    Serial.println("MPU6050 Initialized.");
+    safePrintln("MPU6050 Initialized.");
 
-    Serial.println("Calibrating MPU6050 Gyro... Keep it stable.");
+    safePrintln("Calibrating MPU6050 Gyro... Keep it stable.");
 
     float rollSum = 0, pitchSum = 0, yawSum = 0;
     float dummyAngleRoll, dummyAnglePitch;  // Variabel sementara
@@ -281,13 +283,13 @@ void setupMPU6050() {
     GyroBiasPitch = pitchSum / MPU_CALIBRATION_COUNT;
     GyroBiasYaw = yawSum / MPU_CALIBRATION_COUNT;
 
-    Serial.println("Calibration Complete:");
-    Serial.print("Gyro Bias Roll: ");
-    Serial.println(GyroBiasRoll);
-    Serial.print("Gyro Bias Pitch: ");
-    Serial.println(GyroBiasPitch);
-    Serial.print("Gyro Bias Yaw: ");
-    Serial.println(GyroBiasYaw);
+    safePrintln("Calibration Complete:");
+    safePrint("Gyro Bias Roll: ");
+    safePrintln(String(GyroBiasRoll));
+    safePrint("Gyro Bias Pitch: ");
+    safePrintln(String(GyroBiasPitch));
+    safePrint("Gyro Bias Yaw: ");
+    safePrintln(String(GyroBiasYaw));
 }
 
 void setupButtonCallbacks() {
@@ -325,6 +327,13 @@ void setupButtonCallbacks() {
     button3.attachLongPressStart([]() {
         ButtonEvent event = {3, 1};
         xQueueSend(xButtonQueue, &event, 0);
+        safePrintln("entering deep sleep...");
+        pinMode(PIN_POWER_ON, OUTPUT);
+        pinMode(PIN_LCD_BL, OUTPUT);
+        digitalWrite(PIN_POWER_ON, LOW);
+        digitalWrite(PIN_LCD_BL, LOW);
+        delay(1000);
+        esp_deep_sleep_start();
     });
     button3.attachDoubleClick([]() {
         ButtonEvent event = {3, 2};
@@ -418,7 +427,7 @@ void safePrintln(String msg) {
         Serial.flush();  // Ensure immediate output
         xSemaphoreGive(xSerialMutex);
     } else {
-        Serial.println("Error: Could not take Serial Mutex!");
+        Serial.println("Error: Could not take Serial Mutex for : " + msg);
     }
 }
 
@@ -432,7 +441,7 @@ void safePrint(String msg) {
         Serial.flush();  // Ensure immediate output
         xSemaphoreGive(xSerialMutex);
     } else {
-        Serial.println("Error: Could not take Serial Mutex!");
+        Serial.println("Error: Could not take Serial Mutex for : " + msg);
     }
 }
 
