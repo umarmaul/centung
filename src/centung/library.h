@@ -10,6 +10,7 @@
 #include "FS.h"
 #include "OneButton.h"
 #include "driver/rtc_io.h"
+#include "esp_task_wdt.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"

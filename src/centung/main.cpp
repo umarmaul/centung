@@ -45,7 +45,6 @@ TaskHandle_t h_taskMainLogic = NULL;
 TaskHandle_t h_taskTimeSync = NULL;
 TaskHandle_t h_setupTask = NULL;  // Handle for the main setup task
 
-SemaphoreHandle_t xSerialMutex = NULL;
 SemaphoreHandle_t xSensorDataMutex = NULL;
 SemaphoreHandle_t xStateMutex = NULL;
 SemaphoreHandle_t xI2CMutex = NULL;
@@ -63,22 +62,17 @@ void setupMPU6050();
 // Task Functions
 void taskWiFiManagerCode(void *pvParameters);
 void taskButtonCheckCode(void *pvParameters);
-
-// Thread-safe Serial Print
-void safePrintln(String msg);
-void safePrint(String msg);
+void taskDeepSleepCode(void *pvParameters);
 
 // ISR Function
 void IRAM_ATTR resetESP();
 void IRAM_ATTR dataReadyISR();
 
 void setup() {
-    Serial.begin(115200);
-    delay(5000);
-    Serial.println("Starting Centung...");
-
     Wire.begin(PIN_IIC_SDA, PIN_IIC_SCL);
     Wire.setClock(400000);
+
+    Serial.begin(115200);
 
     pinMode(PIN_POWER_ON, OUTPUT);
     pinMode(PIN_BUZZER, OUTPUT);
@@ -93,14 +87,13 @@ void setup() {
     rtc_gpio_hold_en((gpio_num_t)PUSH_BUTTON_3);
     esp_sleep_enable_ext0_wakeup((gpio_num_t)PUSH_BUTTON_3, 0);
 
-    // attachInterrupt(digitalPinToInterrupt(PUSH_BUTTON_3), resetESP, FALLING);
+    attachInterrupt(digitalPinToInterrupt(PUSH_BUTTON_3), resetESP, FALLING);
     attachInterrupt(digitalPinToInterrupt(PIN_HX711_DATA), dataReadyISR, FALLING);
 
     // Store the handle of the current task (setup runs in this task initially)
     h_setupTask = xTaskGetCurrentTaskHandle();
 
     // --- Create Mutexes and Semaphores FIRST ---
-    xSerialMutex = xSemaphoreCreateMutex();
     xSensorDataMutex = xSemaphoreCreateMutex();
     xStateMutex = xSemaphoreCreateMutex();
     xI2CMutex = xSemaphoreCreateMutex();
@@ -108,31 +101,27 @@ void setup() {
 
     xButtonQueue = xQueueCreate(10, sizeof(ButtonEvent));
 
-    if (!xSerialMutex || !xSensorDataMutex || !xStateMutex || !xI2CMutex || !xDataReadySemaphore) {
-        safePrintln("FATAL: Failed to create RTOS synchronization objects!");
-        while (1);
-    }
-    safePrintln("RTOS Objects Created.");
+    Serial.println("RTOS Objects Created.");
 
     // --- Initialize Peripherals ---
     setupEEPROM();
     setupScreen();
     setupLoadCell();
     setupMPU6050();
-    safePrintln("Peripherals Initialized.");
+    Serial.println("Peripherals Initialized.");
 
     // --- Start WiFi Manager Task ---
     xTaskCreatePinnedToCore(taskWiFiManagerCode, "WiFi Setup Task", 8192, NULL, 1, NULL, 0);
-    safePrintln("WiFi Setup Task created. Waiting for notification...");
 
     // Wait here until WiFi is connected by the taskWiFiManagerCode
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);  // Wait indefinitely for notification
 
     if (WiFi.status() == WL_CONNECTED) {
-        safePrintln("WiFi Connection Established by Task.");
+        Serial.println("WiFi Connection Established by Task.");
         xTaskCreatePinnedToCore(taskButtonCheckCode, "ButtonCheck", 2048, NULL, 2, &h_taskButtonCheck, 1);
+        xTaskCreatePinnedToCore(taskDeepSleepCode, "DeepSleep", 2048, NULL, 3, NULL, 1);
     } else {
-        safePrintln("FATAL: WiFi Connection Failed in Task!");
+        Serial.println("FATAL: WiFi Connection Failed in Task!");
     }
 }
 
@@ -145,15 +134,11 @@ void setupEEPROM() {
     if (isnan(calibrationValue)) {
         calibrationValue = 1306.5337;
     }
-    safePrint("Calibration value: ");
-    safePrintln(String(calibrationValue));
 
     EEPROM.get(tareOffsetVal_eepromAdress, calibrationOffset);
     if (isnan(calibrationOffset)) {
         calibrationOffset = 8434937.00;
     }
-    safePrint("Zero offset value: ");
-    safePrintln(String(calibrationOffset));
 }
 
 void setupScreen() {
@@ -215,11 +200,10 @@ void setupLoadCell() {
     LoadCell.start(stabilizingtime, _tare);
 
     if (LoadCell.getTareTimeoutFlag() || LoadCell.getSignalTimeoutFlag()) {
-        safePrintln("Timeout, check MCU>HX711 wiring and pin designations");
+        Serial.println("Timeout, check MCU>HX711 wiring and pin designations");
         esp_deep_sleep_start();
     } else {
         LoadCell.setCalFactor(calibrationValue);  // set calibration value (float)
-        safePrintln("Startup is complete");
     }
 }
 
@@ -263,9 +247,6 @@ void setupMPU6050() {
     Wire.write(0x00);  // Set to zero (wakes up the MPU-6050)
     Wire.endTransmission(true);
     delay(100);  // Tunggu sensor stabil
-    safePrintln("MPU6050 Initialized.");
-
-    safePrintln("Calibrating MPU6050 Gyro... Keep it stable.");
 
     float rollSum = 0, pitchSum = 0, yawSum = 0;
     float dummyAngleRoll, dummyAnglePitch;  // Variabel sementara
@@ -282,19 +263,11 @@ void setupMPU6050() {
     GyroBiasRoll = rollSum / MPU_CALIBRATION_COUNT;
     GyroBiasPitch = pitchSum / MPU_CALIBRATION_COUNT;
     GyroBiasYaw = yawSum / MPU_CALIBRATION_COUNT;
-
-    safePrintln("Calibration Complete:");
-    safePrint("Gyro Bias Roll: ");
-    safePrintln(String(GyroBiasRoll));
-    safePrint("Gyro Bias Pitch: ");
-    safePrintln(String(GyroBiasPitch));
-    safePrint("Gyro Bias Yaw: ");
-    safePrintln(String(GyroBiasYaw));
 }
 
 void setupButtonCallbacks() {
     button1.attachClick([]() {
-        safePrintln("Button 1 Clicked");
+        Serial.println("Button 1 Clicked");
         ButtonEvent event = {1, 0};
         xQueueSend(xButtonQueue, &event, 0);
     });
@@ -307,7 +280,7 @@ void setupButtonCallbacks() {
         xQueueSend(xButtonQueue, &event, 0);
     });
     button2.attachClick([]() {
-        safePrintln("Button 2 Clicked");
+        Serial.println("Button 2 Clicked");
         ButtonEvent event = {2, 0};
         xQueueSend(xButtonQueue, &event, 0);
     });
@@ -320,27 +293,20 @@ void setupButtonCallbacks() {
         xQueueSend(xButtonQueue, &event, 0);
     });
     button3.attachClick([]() {
-        safePrintln("Button 3 Clicked");
+        Serial.println("Button 3 Clicked");
         ButtonEvent event = {3, 0};
         xQueueSend(xButtonQueue, &event, 0);
     });
-    button3.attachLongPressStart([]() {
+    button3.attachLongPressStop([]() {
         ButtonEvent event = {3, 1};
         xQueueSend(xButtonQueue, &event, 0);
-        safePrintln("entering deep sleep...");
-        pinMode(PIN_POWER_ON, OUTPUT);
-        pinMode(PIN_LCD_BL, OUTPUT);
-        digitalWrite(PIN_POWER_ON, LOW);
-        digitalWrite(PIN_LCD_BL, LOW);
-        delay(1000);
-        esp_deep_sleep_start();
     });
     button3.attachDoubleClick([]() {
         ButtonEvent event = {3, 2};
         xQueueSend(xButtonQueue, &event, 0);
     });
     button4.attachClick([]() {
-        safePrintln("Button 4 Clicked");
+        Serial.println("Button 4 Clicked");
         ButtonEvent event = {4, 0};
         xQueueSend(xButtonQueue, &event, 0);
     });
@@ -355,46 +321,39 @@ void setupButtonCallbacks() {
 }
 
 void taskWiFiManagerCode(void *pvParameters) {
-    safePrintln("taskWiFiManager executing.");
     wm.setConnectTimeout(CONNECT_TIMEOUT);
     wm.setConfigPortalTimeout(PORTAL_TIMEOUT);
 
-    bool wifiConnected = wm.autoConnect("CENTUNG");
+    bool wifiConnected = wm.autoConnect(DEVICE_NAME);
 
-    if (!wifiConnected && !Ping.ping(remote_ip)) {
-        safePrintln("WiFiManager Failed to Connect.");
-        Serial.flush();
-        wm.setConfigPortalTimeout(PORTAL_TIMEOUT);
-        if (!wm.startConfigPortal("CENTUNG")) {
-            safePrintln("failed to connect and hit timeout");
-            esp_deep_sleep_start();
-        } else {
-            safePrintln("WiFiManager Connected!");
-            delay(100);  // Small delay to stabilize WiFi connection
-            ESP.restart();
-        }
+    if (!wifiConnected) {
+        Serial.println("failed to connect and hit timeout");
+        esp_deep_sleep_start();
     } else {
-        safePrintln("WiFiManager Connected!");
-        delay(100);  // Small delay to stabilize WiFi connection
+        if (!Ping.ping(REMOTE_IP)) {
+            wm.setConfigPortalTimeout(PORTAL_TIMEOUT);
+            if (!wm.startConfigPortal(DEVICE_NAME)) {
+                Serial.println("No internet and hit timeout");
+                esp_deep_sleep_start();
+            } else {
+                Serial.println("Connected and sleep");
+                esp_deep_sleep_start();
+            }
+        }
     }
 
     // Notify the setup() task that WiFi setup attempt is complete
     if (h_setupTask != NULL) {
         xTaskNotifyGive(h_setupTask);
-        safePrintln("Notification sent to setup task.");
     } else {
-        safePrintln("Error: Could not get handle for setup task to notify.");
+        Serial.println("Error: Could not get handle for setup task to notify.");
     }
-
-    // Flush Serial output and wait briefly to ensure all messages are printed
-    Serial.flush();
-    delay(50);
 
     vTaskDelete(NULL);  // Delete self
 }
 
 void taskButtonCheckCode(void *pvParameters) {
-    safePrintln("taskButtonCheck started.");
+    detachInterrupt(digitalPinToInterrupt(PUSH_BUTTON_3));
     setupButtonCallbacks();
     while (1) {
         button1.tick();
@@ -405,44 +364,49 @@ void taskButtonCheckCode(void *pvParameters) {
     }
 }
 
+void taskDeepSleepCode(void *pvParameters) {
+    while (1) {
+        ButtonEvent event;
+        if (xQueueReceive(xButtonQueue, &event, portMAX_DELAY) == pdTRUE) {
+            if (event.buttonId == 3 && event.eventType == 1) {
+                Serial.println("Deep Sleep triggered by Button 3 long press.");
+
+                // Suspend tasks safely
+                if (h_taskSensorRead != NULL) vTaskSuspend(h_taskSensorRead);
+                if (h_taskButtonCheck != NULL) vTaskSuspend(h_taskButtonCheck);
+                if (h_taskDisplayUpdate != NULL) vTaskSuspend(h_taskDisplayUpdate);
+                if (h_taskMainLogic != NULL) vTaskSuspend(h_taskMainLogic);
+                if (h_taskTimeSync != NULL) vTaskSuspend(h_taskTimeSync);
+
+                // Disable peripherals
+                LoadCell.powerDown();
+                Wire.end();
+                digitalWrite(PIN_LCD_BL, LOW);
+                digitalWrite(PIN_POWER_ON, LOW);
+
+                // Detach all interrupts
+                detachInterrupt(digitalPinToInterrupt(PIN_HX711_DATA));
+
+                // Flush serial
+                Serial.end();
+
+                // Enter deep sleep
+                Serial.println("Entering deep sleep...");
+                esp_deep_sleep_start();
+            }
+        }
+    }
+}
+
 void IRAM_ATTR resetESP() {
+    detachInterrupt(digitalPinToInterrupt(PUSH_BUTTON_3));
+    detachInterrupt(digitalPinToInterrupt(PIN_HX711_DATA));
+
     ESP.restart();
 }
 
 void IRAM_ATTR dataReadyISR() {
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    xSemaphoreGiveFromISR(xDataReadySemaphore, &xHigherPriorityTaskWoken);
-    if (xHigherPriorityTaskWoken) {
-        portYIELD_FROM_ISR();
-    }
-}
-
-void safePrintln(String msg) {
-    if (xSerialMutex == NULL) {
-        Serial.println("Error: Serial Mutex is NULL!");
-        return;
-    }
-    if (xSemaphoreTake(xSerialMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
-        Serial.println(msg);
-        Serial.flush();  // Ensure immediate output
-        xSemaphoreGive(xSerialMutex);
-    } else {
-        Serial.println("Error: Could not take Serial Mutex for : " + msg);
-    }
-}
-
-void safePrint(String msg) {
-    if (xSerialMutex == NULL) {
-        Serial.println("Error: Serial Mutex is NULL!");
-        return;
-    }
-    if (xSemaphoreTake(xSerialMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
-        Serial.print(msg);
-        Serial.flush();  // Ensure immediate output
-        xSemaphoreGive(xSerialMutex);
-    } else {
-        Serial.println("Error: Could not take Serial Mutex for : " + msg);
-    }
+    xSemaphoreGiveFromISR(xDataReadySemaphore, NULL);
 }
 
 // ================== BATAS SUCI ================

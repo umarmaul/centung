@@ -61,7 +61,7 @@ const long gmtOffset_sec = 25200;
 const int daylightOffset_sec = 0;
 
 // Test PING variable to Google
-const IPAddress remote_ip(8, 8, 8, 8);
+const IPAddress REMOTE_IP(8, 8, 8, 8);
 
 // Time Variables
 char timeHour[3];
@@ -193,7 +193,7 @@ int tanggal = 0, bulan = 0;
 // =========================================================================
 /*wifi*/
 #define WIFI_CONNECT_WAIT_MAX (30 * 1000)
-#define CONNECT_TIMEOUT 20
+#define CONNECT_TIMEOUT 10
 #define PORTAL_TIMEOUT 180
 
 /*TFT CONFIG*/
