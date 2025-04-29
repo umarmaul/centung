@@ -21,6 +21,7 @@ OneButton button4(PUSH_BUTTON_4, true, true);
 // Sprite Instances
 TFT_eSprite loading_screen = TFT_eSprite(&tft);
 TFT_eSprite progress_bar = TFT_eSprite(&tft);
+TFT_eSprite text_init = TFT_eSprite(&tft);
 TFT_eSprite select_profile = TFT_eSprite(&tft);
 TFT_eSprite text_profile = TFT_eSprite(&tft);
 TFT_eSprite tunggu_nimbang = TFT_eSprite(&tft);
@@ -150,17 +151,18 @@ void setupScreen() {
     tft.setRotation(3);
     tft.setSwapBytes(true);
     tft.fillScreen(TFT_WHITE);
-    tft.setTextColor(TFT_BLACK, 0xE73C);
     tft.pushImage(0, 0, 320, 170, loading);
 
     loading_screen.createSprite(320, 170);
     loading_screen.setSwapBytes(true);
     progress_bar.createSprite(320, 170);
+    text_init.createSprite(320, 170);
+    text_init.setTextColor(TFT_BLACK, BACKGROUND);
 
     select_profile.createSprite(320, 170);
     select_profile.setSwapBytes(true);
     text_profile.createSprite(320, 170);
-    text_profile.setTextColor(TFT_BLACK, PROFILE_BACKGROUND);
+    text_profile.setTextColor(TFT_BLACK, BACKGROUND);
 
     tunggu_nimbang.createSprite(320, 170);
     tunggu_nimbang.setSwapBytes(true);
@@ -168,22 +170,22 @@ void setupScreen() {
     timbangan_screen.setSwapBytes(true);
     arc.createSprite(320, 170);
     text_timbangan.createSprite(320, 170);
-    text_timbangan.setTextColor(TFT_BLACK, 0xE73C);
+    text_timbangan.setTextColor(TFT_BLACK, BACKGROUND);
 
     pairing_mode.createSprite(320, 170);
     pairing_mode.setSwapBytes(true);
     text_paring.createSprite(320, 170);
-    text_paring.setTextColor(TFT_BLACK, 0xE73C);
+    text_paring.setTextColor(TFT_BLACK, BACKGROUND);
 
     calib_screen.createSprite(320, 170);
     calib_screen.setSwapBytes(true);
     calib_text.createSprite(320, 170);
-    calib_text.setTextColor(TFT_BLACK, 0xE73C);
+    calib_text.setTextColor(TFT_BLACK, BACKGROUND);
 
     position_screen.createSprite(320, 170);
     position_screen.setSwapBytes(true);
     position_text.createSprite(320, 170);
-    position_text.setTextColor(TFT_BLACK, 0xE73C);
+    position_text.setTextColor(TFT_BLACK, BACKGROUND);
 
     cek_data.createSprite(320, 170);
     cek_data.setTextDatum(4);
@@ -192,10 +194,19 @@ void setupScreen() {
     alarm_screen.createSprite(320, 170);
     alarm_screen.setSwapBytes(true);
     alarm_text.createSprite(320, 170);
-    alarm_text.setTextColor(TFT_BLACK, 0xE73C);
+    alarm_text.setTextColor(TFT_BLACK, BACKGROUND);
+}
+
+void initTextScreen(String message) {
+    loading_screen.pushImage(0, 0, 320, 170, loading);
+    text_init.fillSprite(BACKGROUND);
+    text_init.drawCentreString(message, 160, 128, 1);
+    text_init.pushToSprite(&loading_screen, 0, 0, BACKGROUND);
+    loading_screen.pushSprite(0, 0);
 }
 
 void setupLoadCell() {
+    initTextScreen("Initializing Load Cell...");
     LoadCell.begin();
     LoadCell.start(stabilizingtime, _tare);
 
@@ -242,6 +253,7 @@ void readMPU6050(float &RateRoll, float &RatePitch, float &RateYaw, float &Angle
 }
 
 void setupMPU6050() {
+    initTextScreen("Initializing MPU6050...");
     Wire.beginTransmission(MPU6050_ADDR);
     Wire.write(0x6B);  // PWR_MGMT_1 register
     Wire.write(0x00);  // Set to zero (wakes up the MPU-6050)
@@ -320,9 +332,28 @@ void setupButtonCallbacks() {
     });
 }
 
+void progressBarScreen() {
+    int blocks = 0;
+    while (blocks < 20) {
+        loading_screen.pushImage(0, 0, 320, 170, loading);
+        progress_bar.fillSprite(BACKGROUND);
+        blocks++;
+        progress_bar.drawRoundRect(98, 122, 124, 16, 3, TFT_BLACK);
+
+        for (int i = 0; i < blocks; i++) {
+            progress_bar.fillRect(i * 5 + (98 + 2) + (i * 1), 122 + 4, 5, 10, TFT_BLACK);
+        }
+
+        progress_bar.pushToSprite(&loading_screen, 0, 0, BACKGROUND);
+        loading_screen.pushSprite(0, 0);
+    }
+}
+
 void taskWiFiManagerCode(void *pvParameters) {
     wm.setConnectTimeout(CONNECT_TIMEOUT);
     wm.setConfigPortalTimeout(PORTAL_TIMEOUT);
+    String message = "Connecting to WiFi: " + String(DEVICE_NAME);
+    initTextScreen(message);
 
     bool wifiConnected = wm.autoConnect(DEVICE_NAME);
 
@@ -341,6 +372,8 @@ void taskWiFiManagerCode(void *pvParameters) {
             }
         }
     }
+
+    progressBarScreen();
 
     // Notify the setup() task that WiFi setup attempt is complete
     if (h_setupTask != NULL) {

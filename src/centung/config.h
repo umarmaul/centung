@@ -197,8 +197,7 @@ int tanggal = 0, bulan = 0;
 #define PORTAL_TIMEOUT 180
 
 /*TFT CONFIG*/
-#define LOADING_BACKGROUND 0xE73B
-#define PROFILE_BACKGROUND 0xE73C
+#define BACKGROUND 0xE73C
 #define GRAY 0xB5B6
 #define ORANGE 0xC260
 #define COLOR_2 0x22CE
