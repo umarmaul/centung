@@ -51,9 +51,6 @@ struct HttpCommand {
 // =========================================================================
 // Global Variables
 // =========================================================================
-// Shared Variables
-AppState currentState = STATE_PROFILE_SELECTION;
-SensorData sensorData;
 
 // NTP Variables
 const char* ntpServer = "pool.ntp.org";
