@@ -19,7 +19,6 @@
 // =========================================================================
 enum AppState {
     STATE_PROFILE_SELECTION,
-    STATE_CHECK_ORIENTATION,
     STATE_MEASURING,
     STATE_CALIBRATION,
     STATE_CHECK_WEIGHT,
@@ -41,7 +40,7 @@ struct ButtonEvent {
 };
 
 struct HttpCommand {
-    int type;
+    int type;  // 0: create log, 1: delete latest, 2: delete all today
     float weight;
     float roll;
     float pitch;
@@ -69,9 +68,6 @@ char month[10];
 char year[5];
 char timeWeekDay[10];
 int dayInWeek;
-
-// Voltage Variable
-float volt = 0.0;
 
 // Date Variables
 String Day[7] = {"SU", "MO", "TU", "WE", "TH", "FR", "SA"};
@@ -118,6 +114,7 @@ const int MPU_CALIBRATION_COUNT = 2000;
 float GyroBiasRoll = 0, GyroBiasPitch = 0, GyroBiasYaw = 0;
 
 // Kalman Filter Settings
+float KalmanAngleRoll = 0, KalmanAnglePitch = 0;
 float KalmanUncertaintyAngleRoll = 2 * 2;
 float KalmanUncertaintyAnglePitch = 2 * 2;
 

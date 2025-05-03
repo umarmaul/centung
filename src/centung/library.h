@@ -1,3 +1,5 @@
+#pragma once
+
 #include <ArduinoJson.h>
 #include <EEPROM.h>
 #include <ESP32Ping.h>
@@ -6,11 +8,11 @@
 #include <TFT_eSPI.h>
 #include <WiFiManager.h>
 #include <Wire.h>
+#include <HTTPClient.h>
 
 #include "FS.h"
 #include "OneButton.h"
 #include "driver/rtc_io.h"
-#include "esp_task_wdt.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
