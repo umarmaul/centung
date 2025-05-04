@@ -61,6 +61,7 @@ QueueHandle_t xHttpQueue = NULL;
 AppState currentState = STATE_PROFILE_SELECTION;
 SensorData sensorData = {0.0, 0.0, 0.0};
 float totalNasi[4] = {0.0, 0.0, 0.0, 0.0};  // Updated by HttpRequest task
+float maxNasi[4] = {0.0, 0.0, 0.0, 0.0};    // Updated by HttpRequest task
 
 // --- Forward Declarations ---
 void setupEEPROM();
@@ -126,14 +127,12 @@ void setup() {
         esp_deep_sleep_start();
     }
 
-    Serial.println("RTOS Objects Created.");
-
     // --- Initialize Peripherals ---
     setupEEPROM();
     setupScreen();
     setupLoadCell();
     setupMPU6050();
-    Serial.println("Peripherals Initialized.");
+    configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
 
     // --- Start WiFi Manager Task ---
     xTaskCreatePinnedToCore(taskWiFiManagerCode, "WiFi Setup Task", 8192, NULL, 1, NULL, 0);
@@ -142,12 +141,11 @@ void setup() {
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);  // Wait indefinitely for notification
 
     if (WiFi.status() == WL_CONNECTED) {
-        Serial.println("WiFi Connected. Starting Tasks...");
-        xTaskCreatePinnedToCore(taskDisplayUpdateCode, "DisplayUpdate", 4096, NULL, 1, &h_taskDisplayUpdate, 1);
-        xTaskCreatePinnedToCore(taskMainLogicCode, "MainLogic", 8192, NULL, 2, &h_taskMainLogic, 1);
-        xTaskCreatePinnedToCore(taskSensorReadCode, "SensorRead", 4096, NULL, 3, &h_taskSensorRead, 1);
-        xTaskCreatePinnedToCore(taskHttpRequestCode, "HttpRequest", 8192, NULL, 1, &h_taskHttpRequest, 0);
-        xTaskCreatePinnedToCore(taskButtonCheckCode, "ButtonCheck", 2048, NULL, 2, &h_taskButtonCheck, 0);
+        xTaskCreatePinnedToCore(taskButtonCheckCode, "ButtonCheck", 2048, NULL, 1, &h_taskButtonCheck, 1);
+        xTaskCreatePinnedToCore(taskSensorReadCode, "SensorRead", 4096, NULL, 2, &h_taskSensorRead, 1);
+        xTaskCreatePinnedToCore(taskHttpRequestCode, "HttpRequest", 8192, NULL, 3, &h_taskHttpRequest, 1);
+        xTaskCreatePinnedToCore(taskDisplayUpdateCode, "DisplayUpdate", 4096, NULL, 1, &h_taskDisplayUpdate, 0);
+        xTaskCreatePinnedToCore(taskMainLogicCode, "MainLogic", 8192, NULL, 2, &h_taskMainLogic, 0);
         xTaskCreatePinnedToCore(taskDeepSleepCode, "DeepSleep", 2048, NULL, 3, &h_taskDeepSleep, 0);
     } else {
         Serial.println("WiFi Connection Failed!");
@@ -163,7 +161,7 @@ void setupEEPROM() {
     EEPROM.begin(512);
     EEPROM.get(calVal_eepromAdress, calibrationValue);
     if (isnan(calibrationValue)) {
-        calibrationValue = 1306.5337;
+        calibrationValue = 1408.25;
     }
 
     EEPROM.get(tareOffsetVal_eepromAdress, calibrationOffset);
@@ -242,9 +240,9 @@ void setupLoadCell() {
 
     if (LoadCell.getTareTimeoutFlag() || LoadCell.getSignalTimeoutFlag()) {
         Serial.println("Timeout, check MCU>HX711 wiring and pin designations");
-        currentState = STATE_ERROR;
+        esp_deep_sleep_start();
     } else {
-        LoadCell.setCalFactor(calibrationValue);  // set calibration value (float)
+        LoadCell.setCalFactor(calibrationValue);
     }
 }
 
@@ -340,7 +338,6 @@ void smoothAngles(float KalmanAngleRoll, float KalmanAnglePitch) {
 
 void setupButtonCallbacks() {
     button1.attachClick([]() {
-        Serial.println("Button 1 Clicked");
         ButtonEvent event = {1, 0};
         xQueueSend(xButtonQueue, &event, 0);
     });
@@ -354,11 +351,10 @@ void setupButtonCallbacks() {
         xQueueSend(xButtonQueue, &event, 0);
     });
     button2.attachClick([]() {
-        Serial.println("Button 2 Clicked");
         ButtonEvent event = {2, 0};
         xQueueSend(xButtonQueue, &event, 0);
     });
-    button2.attachLongPressStart([]() {
+    button2.attachLongPressStop([]() {
         ButtonEvent event = {2, 1};
         xQueueSend(xButtonQueue, &event, 0);
     });
@@ -367,11 +363,10 @@ void setupButtonCallbacks() {
         xQueueSend(xButtonQueue, &event, 0);
     });
     button3.attachClick([]() {
-        Serial.println("Button 3 Clicked");
         ButtonEvent event = {3, 0};
         xQueueSend(xButtonQueue, &event, 0);
     });
-    button3.attachLongPressStart([]() {
+    button3.attachLongPressStop([]() {
         ButtonEvent event = {3, 1};
         xQueueSend(xButtonQueue, &event, 0);
     });
@@ -380,11 +375,10 @@ void setupButtonCallbacks() {
         xQueueSend(xButtonQueue, &event, 0);
     });
     button4.attachClick([]() {
-        Serial.println("Button 4 Clicked");
         ButtonEvent event = {4, 0};
         xQueueSend(xButtonQueue, &event, 0);
     });
-    button4.attachLongPressStart([]() {
+    button4.attachLongPressStop([]() {
         ButtonEvent event = {4, 1};
         xQueueSend(xButtonQueue, &event, 0);
     });
@@ -405,6 +399,56 @@ void progressBarScreen() {
         progress_bar.pushToSprite(&loading_screen, 0, 0, BACKGROUND);
         loading_screen.pushSprite(0, 0);
         vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
+void updateTimeVars() {
+    struct tm timeinfo;
+    if (!getLocalTime(&timeinfo)) {
+        return;
+    }
+
+    strftime(timeHour, 3, "%H", &timeinfo);
+    strftime(timeMin, 3, "%M", &timeinfo);
+    strftime(timeSec, 3, "%S", &timeinfo);
+    strftime(timeWeekDay, 10, "%A", &timeinfo);
+
+    String InWeek = String(timeWeekDay);
+    for (int i = 0; i < 7; i++) {
+        if (InWeek == SDay[i])
+            dayInWeek = i;
+    }
+
+    strftime(day, 3, "%d", &timeinfo);
+    strftime(month, 10, "%B", &timeinfo);
+    strftime(year, 5, "%Y", &timeinfo);
+
+    dayInMonth = String(day).toInt();
+
+    for (int i = 0; i < 12; i++) {
+        if (String(month) == Months[i]) {
+            daysInMonth = mm[i];
+            bulan = i + 1;
+            tanggal = dayInMonth - 1;
+            if (tanggal == 0) {
+                tanggal = mm[i - 1];
+                if (bulan == 1) {
+                    tanggal = 31;
+                    bulan = 12;
+                    String(year) = "2023";
+                }
+                bulan = i;
+            }
+        }
+    }
+
+    int j = dayInWeek;
+    for (int i = dayInMonth; i > 0; i--) {
+        firstDay = j;
+        j--;
+
+        if (j == -1)
+            j = 6;
     }
 }
 
@@ -482,7 +526,7 @@ void taskButtonCheckCode(void *pvParameters) {
 
 void taskDisplayUpdateCode(void *pvParameters) {
     for (;;) {
-        float localWeight, localRoll, localPitch;
+        float localWeight, localRoll, localPitch, localTotalNasi, localMaxNasi;
         AppState localState;
         String localProfile;
 
@@ -496,6 +540,19 @@ void taskDisplayUpdateCode(void *pvParameters) {
         if (xSemaphoreTake(xStateMutex, portMAX_DELAY) == pdTRUE) {
             localState = currentState;
             localProfile = selectedProfile;
+            if (selectedProfile == profile1_code) {
+                localTotalNasi = totalNasi[0];
+                localMaxNasi = maxNasi[0];
+            } else if (selectedProfile == profile2_code) {
+                localTotalNasi = totalNasi[1];
+                localMaxNasi = maxNasi[1];
+            } else if (selectedProfile == profile3_code) {
+                localTotalNasi = totalNasi[2];
+                localMaxNasi = maxNasi[2];
+            } else if (selectedProfile == profile4_code) {
+                localTotalNasi = totalNasi[3];
+                localMaxNasi = maxNasi[3];
+            }
             xSemaphoreGive(xStateMutex);
         }
 
@@ -507,7 +564,7 @@ void taskDisplayUpdateCode(void *pvParameters) {
         int end_angle = (localWeight * 180 / 300) + 90;
 
         switch (localState) {
-            case STATE_PROFILE_SELECTION:
+            case STATE_PROFILE_SELECTION: {
                 select_profile.pushImage(0, 0, 320, 170, profile);
                 text_profile.fillSprite(BACKGROUND);
                 text_profile.drawCentreString(String(batteryPercentage, 0), 246, 5, 1);
@@ -518,20 +575,153 @@ void taskDisplayUpdateCode(void *pvParameters) {
                 text_profile.pushToSprite(&select_profile, 0, 0, BACKGROUND);
                 select_profile.pushSprite(0, 0);
                 break;
-            case STATE_MEASURING:
+            }
+            case STATE_MEASURING: {
+                if (localTotalNasi > localMaxNasi && !_isAware) {
+                    currentState = STATE_ALARM;
+                }
+
                 timbangan_screen.pushImage(0, 0, 320, 170, timbangan);
                 arc.fillSprite(BACKGROUND);
                 text_timbangan.fillSprite(BACKGROUND);
 
                 arc.drawSmoothArc(160, 153, 90, 80, 89, end_angle, TFT_CYAN, BACKGROUND, true);
                 text_timbangan.drawCentreString(String(localWeight), 160, 90, 6);
-                text_timbangan.drawCentreString("Penimbang Berat", 160, 5, 2);
-                text_timbangan.drawCentreString(localProfile, 15, 5, 2);
+                text_timbangan.drawCentreString("Back", 20, 15, 2);
+                text_timbangan.drawCentreString("Save", 300, 15, 2);
+                text_timbangan.drawCentreString(localProfile, 160, 5, 2);
+                text_timbangan.drawCentreString("Tare", 300, 150, 2);
+                text_timbangan.drawCentreString("Gyro", 20, 150, 2);
                 text_timbangan.drawCentreString(String(batteryPercentage, 0), 246, 5, 1);
                 arc.pushToSprite(&timbangan_screen, 0, 0, BACKGROUND);
                 text_timbangan.pushToSprite(&timbangan_screen, 0, 0, BACKGROUND);
                 timbangan_screen.pushSprite(0, 0);
+
                 break;
+            }
+            case STATE_GYRO_TEST: {
+                position_screen.pushImage(0, 0, 320, 170, datar);
+                position_text.fillSprite(BACKGROUND);
+                position_text.drawCentreString("Back", 20, 15, 2);
+                position_text.drawCentreString(String(batteryPercentage, 0), 246, 5, 1);
+                position_text.drawCentreString(String(localRoll), 90, 95, 4);
+                position_text.drawCentreString(String(localPitch), 225, 95, 4);
+                position_text.pushToSprite(&position_screen, 0, 0, BACKGROUND);
+                position_screen.pushSprite(0, 0);
+                break;
+            }
+            case STATE_CALIBRATION: {
+                calib_screen.pushImage(0, 0, 320, 170, kotak);
+                calib_text.fillSprite(BACKGROUND);
+                calib_text.drawCentreString("Calibration Mode", 160, 55, 4);
+                calib_text.drawCentreString("Tare first, then put 20g weight", 160, 90, 2);
+                calib_text.drawCentreString("Back", 55, 20, 2);
+                calib_text.drawCentreString("Reset", 55, 135, 2);
+                calib_text.drawCentreString("Start", 265, 20, 2);
+                calib_text.drawCentreString("Tare", 265, 135, 2);
+                calib_text.drawCentreString(String(batteryPercentage, 0), 246, 5, 1);
+                calib_text.pushToSprite(&calib_screen, 0, 0, BACKGROUND);
+                calib_screen.pushSprite(0, 0);
+                break;
+            }
+            case STATE_HISTORY: {
+                updateTimeVars();
+
+                cek_data.fillSprite(TFT_BLACK);
+
+                cek_data.drawRoundRect(2, 2, 118, 166, 5, TFT_WHITE);  /// border
+                cek_data.fillRoundRect(10, 61, 100, 24, 5, COLOR_2);
+                cek_data.fillRoundRect(10, 110, 100, 24, 5, COLOR_2);
+
+                cek_data.setTextColor(TFT_WHITE, COLOR_2);
+                cek_data.drawCentreString(String(localTotalNasi, 1) + String(" gram"), 62, 64, 2);
+                cek_data.drawCentreString(String(localMaxNasi, 1) + " gram", 62, 113, 2);
+
+                cek_data.setTextColor(TFT_WHITE, TFT_BLACK);
+
+                caw = 24;
+                cay = 70;
+                cax = 142;
+                cah = 15;
+
+                cek_data.setTextDatum(4);
+                for (int j = 0; j < 7; j++) {
+                    cek_data.drawString(Day[j], cax + (j * caw), cay, 2);
+                }
+
+                cek_data.drawCentreString("Telah dikonsumsi", 62, 40, 2);
+                cek_data.drawCentreString("Maksimum", 62, 90, 2);
+
+                int broj = 1;
+                int w = 0;
+                bool started = 0;
+
+                for (int i = 0; i < 6; i++)
+                    for (int j = 0; j < 7; j++) {
+                        if (w == firstDay)
+                            started = 1;
+                        if (started == 1 && broj <= daysInMonth) {
+                            if (broj == dayInMonth)
+                                cek_data.setTextColor(TFT_BLACK, TFT_WHITE);
+                            else
+                                cek_data.setTextColor(TFT_ORANGE, TFT_BLACK);
+                            cek_data.drawString(String(broj), cax + (j * caw), cay + cah + (cah * i), 2);
+                            broj++;
+                        }
+                        w++;
+                    }
+
+                cek_data.setTextDatum(0);
+                cek_data.setTextColor(TFT_WHITE, TFT_BLACK);
+                cek_data.setFreeFont(&Orbitron_Light_32);
+                cek_data.drawString(String(timeHour) + ":" + String(timeMin), 130, -6);
+                cek_data.setFreeFont(&Orbitron_Light_24);
+
+                cek_data.setTextColor(0xD399, TFT_BLACK);
+                cek_data.drawString(String(timeSec), 250, -4);
+
+                cek_data.setTextColor(0x35F9, TFT_BLACK);
+                cek_data.setFreeFont(&FreeSans9pt7b);
+                cek_data.drawString(String(month) + "  " + String(dayInMonth), 130, 32);
+
+                cek_data.setTextColor(GRAY, TFT_BLACK);
+                cek_data.setTextFont(0);
+                cek_data.drawString("BATTERY:", 250, 34);
+
+                cek_data.drawString(String(batteryPercentage, 0) + "%", 250, 46);
+                cek_data.drawRoundRect(304, 30, 12, 136, 2, TFT_SILVER);
+
+                seg = brightness / 24;
+                for (int i = 0; i < seg; i++)
+                    cek_data.fillRect(308, 150 - (i * 13), 4, 11, 0x35F9);
+                cek_data.drawLine(cax - 10, cay - 10, cax + 152, cay - 10, GRAY);
+
+                cek_data.pushImage(298, 0, 26, 26, bright);
+                cek_data.pushSprite(0, 0);
+                break;
+            }
+            case STATE_PAIRING: {
+                pairing_mode.pushImage(0, 0, 320, 170, kotak);
+                text_paring.fillSprite(BACKGROUND);
+                text_paring.drawCentreString("Pairing Mode", 160, 55, 4);
+                text_paring.drawCentreString("WiFi: " + String(DEVICE_NAME), 160, 90, 4);
+                text_paring.drawCentreString("Back", 55, 20, 2);
+                text_paring.drawCentreString("Start", 265, 20, 2);
+                text_paring.drawCentreString(String(batteryPercentage, 0), 246, 5, 1);
+                text_paring.pushToSprite(&pairing_mode, 0, 0, BACKGROUND);
+                pairing_mode.pushSprite(0, 0);
+                break;
+            }
+            case STATE_ALARM: {
+                alarm_screen.pushImage(0, 0, 320, 170, alarmScreen);
+                alarm_text.fillSprite(BACKGROUND);
+                alarm_text.drawCentreString("Simpan", 258, 35, 2);
+                alarm_text.drawCentreString("Hapus", 258, 128, 2);
+                alarm_text.drawCentreString(String(batteryPercentage, 0), 246, 5, 1);
+                alarm_text.pushToSprite(&alarm_screen, 0, 0, BACKGROUND);
+                alarm_screen.pushSprite(0, 0);
+                break;
+            }
         }
         vTaskDelay(pdMS_TO_TICKS(200));
     }
@@ -544,7 +734,7 @@ void taskMainLogicCode(void *pvParameters) {
         if (xQueueReceive(xButtonQueue, &event, pdMS_TO_TICKS(100)) == pdTRUE) {
             if (xSemaphoreTake(xStateMutex, portMAX_DELAY) == pdTRUE) {
                 switch (currentState) {
-                    case STATE_PROFILE_SELECTION:
+                    case STATE_PROFILE_SELECTION: {
                         if (event.eventType == 0) {  // Click
                             if (event.buttonId == 1) {
                                 selectedProfile = profile1_code;
@@ -556,21 +746,171 @@ void taskMainLogicCode(void *pvParameters) {
                                 selectedProfile = profile4_code;
                             }
                             currentState = STATE_MEASURING;
+                        } else if (event.eventType == 1 && event.buttonId == 3) {  // press stop
+                            currentState = STATE_PAIRING;
                         }
                         break;
-                    case STATE_MEASURING:
-                        if (event.eventType == 0 && (event.buttonId == 2)) {
-                            vTaskDelay(pdMS_TO_TICKS(1000));  // Wait for stabilization
-                            if (xSemaphoreTake(xSensorDataMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-                                httpCmd = {0, sensorData.weight, sensorData.roll, sensorData.pitch, selectedProfile};
-                                xSemaphoreGive(xSensorDataMutex);
+                    }
+                    case STATE_MEASURING: {
+                        if (event.eventType == 0) {  // Click
+                            if (event.buttonId == 2) {
+                                vTaskDelay(pdMS_TO_TICKS(1000));  // Wait for stabilization
+                                if (xSemaphoreTake(xSensorDataMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+                                    httpCmd = {0, sensorData.weight, sensorData.roll, sensorData.pitch, selectedProfile};
+                                    xSemaphoreGive(xSensorDataMutex);
+                                }
+                                xQueueSend(xHttpQueue, &httpCmd, 0);
+                            } else if (event.buttonId == 1) {
+                                currentState = STATE_PROFILE_SELECTION;
+                            } else if (event.buttonId == 4) {
+                                LoadCell.update();
+                                LoadCell.tareNoDelay();
+                            } else if (event.buttonId == 3) {
+                                currentState = STATE_GYRO_TEST;
                             }
+                        } else if (event.eventType == 1) {  // press stop
+                            if (event.buttonId == 2) {
+                                currentState = STATE_HISTORY;
+                            } else if (event.buttonId == 3) {
+                                currentState = STATE_PAIRING;
+                            } else if (event.buttonId == 4) {
+                                currentState = STATE_CALIBRATION;
+                            }
+                        }
+                        break;
+                    }
+                    case STATE_GYRO_TEST: {
+                        if (event.eventType == 0) {
+                            if (event.buttonId == 1) {
+                                currentState = STATE_MEASURING;
+                            }
+                        }
+                        break;
+                    }
+                    case STATE_HISTORY: {
+                        if (event.eventType == 0) {  // click
+                            if (event.buttonId == 1) {
+                                currentState = STATE_MEASURING;
+                            } else if (event.buttonId == 2) {
+                                if (brightness < 240) {
+                                    brightness += 24;
+                                    ledcSetup(0, 10000, 8);
+                                    ledcAttachPin(38, 0);
+                                    ledcWrite(0, brightness);
+                                }
+                            } else if (event.buttonId == 3) {
+                                httpCmd = {1, sensorData.weight, sensorData.roll, sensorData.pitch, selectedProfile};
+                                xQueueSend(xHttpQueue, &httpCmd, 0);
+                            } else if (event.buttonId == 4) {
+                                if (brightness > 24) {
+                                    brightness -= 24;
+                                    ledcSetup(0, 10000, 8);
+                                    ledcAttachPin(38, 0);
+                                    ledcWrite(0, brightness);
+                                }
+                            }
+                        } else if (event.eventType == 1 && event.buttonId == 3) {
+                            httpCmd = {2, sensorData.weight, sensorData.roll, sensorData.pitch, selectedProfile};
                             xQueueSend(xHttpQueue, &httpCmd, 0);
                         }
-                        if (event.eventType == 0 && event.buttonId == 1) {
-                            currentState = STATE_PROFILE_SELECTION;
+                        break;
+                    }
+                    case STATE_PAIRING: {
+                        if (event.eventType == 0) {  // click
+                            if (event.buttonId == 1) {
+                                currentState = STATE_PROFILE_SELECTION;
+                            } else if (event.buttonId == 2) {
+                                wm.setConfigPortalTimeout(PORTAL_TIMEOUT);
+                                if (!wm.startConfigPortal(DEVICE_NAME)) {
+                                    Serial.println("failed to connect and hit timeout");
+                                    esp_deep_sleep_start();
+                                } else {
+                                    pairing_mode.pushImage(0, 0, 320, 170, kotak);
+                                    text_paring.fillSprite(BACKGROUND);
+                                    text_paring.drawCentreString("Pairing Mode", 160, 55, 4);
+                                    text_paring.drawCentreString("Connected!", 160, 90, 4);
+                                    text_paring.pushToSprite(&pairing_mode, 0, 0, BACKGROUND);
+                                    pairing_mode.pushSprite(0, 0);
+                                    vTaskDelay(pdMS_TO_TICKS(2000));
+                                    digitalWrite(PIN_BUZZER, HIGH);
+                                    vTaskDelay(pdMS_TO_TICKS(100));
+                                    digitalWrite(PIN_BUZZER, LOW);
+                                    esp_deep_sleep_start();
+                                }
+                            }
                         }
                         break;
+                    }
+                    case STATE_CALIBRATION: {
+                        if (event.eventType == 0) {  // click
+                            if (event.buttonId == 1) {
+                                currentState = STATE_MEASURING;
+                            } else if (event.buttonId == 2) {
+                                LoadCell.update();
+                                float known_mass = 20.0;
+                                vTaskDelay(pdMS_TO_TICKS(2000));
+
+                                LoadCell.refreshDataSet();
+                                calibrationValue = LoadCell.getNewCalibration(known_mass);
+
+                                EEPROM.begin(512);
+                                EEPROM.put(calVal_eepromAdress, calibrationValue);
+                                EEPROM.commit();
+
+                                LoadCell.setCalFactor(calibrationValue);
+
+                                digitalWrite(PIN_BUZZER, HIGH);
+                                vTaskDelay(pdMS_TO_TICKS(100));
+                                digitalWrite(PIN_BUZZER, LOW);
+                            } else if (event.buttonId == 3) {
+                                calibrationValue = 1408.25;
+                                EEPROM.begin(512);
+                                EEPROM.put(calVal_eepromAdress, calibrationValue);
+                                EEPROM.commit();
+
+                                calibrationOffset = 8434937.00;
+                                EEPROM.begin(512);
+                                EEPROM.put(tareOffsetVal_eepromAdress, calibrationOffset);
+                                EEPROM.commit();
+
+                                LoadCell.setTareOffset(calibrationOffset);
+                                LoadCell.setCalFactor(calibrationValue);
+
+                                digitalWrite(PIN_BUZZER, HIGH);
+                                vTaskDelay(pdMS_TO_TICKS(100));
+                                digitalWrite(PIN_BUZZER, LOW);
+                            } else if (event.buttonId == 4) {
+                                LoadCell.update();
+                                LoadCell.tareNoDelay();
+
+                                calibrationOffset = 8434937.00;
+                                EEPROM.begin(512);
+                                EEPROM.put(tareOffsetVal_eepromAdress, calibrationOffset);
+                                EEPROM.commit();
+
+                                LoadCell.setTareOffset(calibrationOffset);
+
+                                LoadCell.setCalFactor(1.0);
+                                digitalWrite(PIN_BUZZER, HIGH);
+                                vTaskDelay(pdMS_TO_TICKS(100));
+                                digitalWrite(PIN_BUZZER, LOW);
+                            }
+                        }
+                        break;
+                    }
+                    case STATE_ALARM: {
+                        if (event.eventType == 0) {  // click
+                            if (event.buttonId == 2) {
+                                _isAware = true;
+                                currentState = STATE_MEASURING;
+                            } else if (event.buttonId == 4) {
+                                httpCmd = {1, sensorData.weight, sensorData.roll, sensorData.pitch, selectedProfile};
+                                xQueueSend(xHttpQueue, &httpCmd, 0);
+                                currentState = STATE_MEASURING;
+                            }
+                        }
+                        break;
+                    }
                 }
                 xSemaphoreGive(xStateMutex);
             } else {
@@ -584,9 +924,11 @@ void taskMainLogicCode(void *pvParameters) {
 void taskHttpRequestCode(void *pvParameters) {
     HTTPClient http;
     String baseUrl = SOCKET_ADDRESS;
+    bool _isFetched = false;
     for (;;) {
         // Periodic profile names and logs fetch
-        if (WiFi.status() == WL_CONNECTED && currentState == STATE_PROFILE_SELECTION) {
+        if (WiFi.status() == WL_CONNECTED && (currentState == STATE_PROFILE_SELECTION || currentState == STATE_HISTORY)) {
+            // Fetch profile names
             http.begin(baseUrl + "profile/get_name?profile1=" + profile1_code + "&profile2=" + profile2_code + "&profile3=" + profile3_code + "&profile4=" + profile4_code);
             http.addHeader("x-device-name", DEVICE_NAME);
             http.addHeader("x-device-password", DEVICE_PASSWORD);
@@ -605,6 +947,7 @@ void taskHttpRequestCode(void *pvParameters) {
             }
             http.end();
 
+            // Fetch Daily logs
             http.begin(baseUrl + "log/get_logs?profile1=" + profile1_code + "&profile2=" + profile2_code + "&profile3=" + profile3_code + "&profile4=" + profile4_code);
             http.addHeader("x-device-name", DEVICE_NAME);
             http.addHeader("x-device-password", DEVICE_PASSWORD);
@@ -622,6 +965,27 @@ void taskHttpRequestCode(void *pvParameters) {
                 Serial.println("Failed to fetch logs: " + String(code));
             }
             http.end();
+
+            // Fetch maxNasi
+            http.begin(baseUrl + "profile/get_maxnasi?profile1=" + profile1_code + "&profile2=" + profile2_code + "&profile3=" + profile3_code + "&profile4=" + profile4_code);
+            http.addHeader("x-device-name", DEVICE_NAME);
+            http.addHeader("x-device-password", DEVICE_PASSWORD);
+            code = http.GET();
+            if (code == 200) {
+                String payload = http.getString();
+                JsonDocument doc;
+                deserializeJson(doc, payload);
+                JsonObject data = doc["data"];
+                maxNasi[0] = data["maxnasi_profile1"] | 0.0;
+                maxNasi[1] = data["maxnasi_profile2"] | 0.0;
+                maxNasi[2] = data["maxnasi_profile3"] | 0.0;
+                maxNasi[3] = data["maxnasi_profile4"] | 0.0;
+            } else {
+                Serial.println("Failed to fetch maxnasi: " + String(code));
+            }
+            http.end();
+
+            vTaskDelay(pdMS_TO_TICKS(1000));
         }
 
         // Handle HTTP commands
@@ -731,18 +1095,16 @@ String getStateName(AppState state) {
             return "PROFILE SELECTION";
         case STATE_MEASURING:
             return "MEASURING";
+        case STATE_GYRO_TEST:
+            return "GYRO TEST";
         case STATE_CALIBRATION:
             return "CALIBRATION";
-        case STATE_CHECK_WEIGHT:
-            return "CHECK WEIGHT";
-        case STATE_DELETE_DOC:
-            return "DELETE DOC";
         case STATE_PAIRING:
             return "PAIRING";
         case STATE_ALARM:
             return "ALARM";
-        case STATE_ERROR:
-            return "ERROR";
+        case STATE_HISTORY:
+            return "HISTORY";
         default:
             return "Unknown";
     }

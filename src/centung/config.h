@@ -20,12 +20,11 @@
 enum AppState {
     STATE_PROFILE_SELECTION,
     STATE_MEASURING,
+    STATE_GYRO_TEST,
     STATE_CALIBRATION,
-    STATE_CHECK_WEIGHT,
-    STATE_DELETE_DOC,
+    STATE_HISTORY,
     STATE_PAIRING,
     STATE_ALARM,
-    STATE_ERROR
 };
 
 struct SensorData {
@@ -80,7 +79,7 @@ int daysInMonth = 0;
 int firstDay = 0;
 
 // Display Variables
-int brightness = 255;
+int brightness = 240;
 int caw = 22;
 int cay = 20;
 int cax = 150;
@@ -98,13 +97,9 @@ volatile bool newDataReady = false;
 const int calVal_eepromAdress = 0;
 const int tareOffsetVal_eepromAdress = 20;
 const int stabilizingtime = 2000;
-float calibrationValue = 1306.5337;
+float calibrationValue = 1408.25;
 float calibrationOffset = 8434937.00;
 boolean _tare = true;
-
-// Nasi Variables
-float KNasi1 = 0, KNasi2 = 0, KNasi3 = 0, KNasi4 = 0;
-float totalNasi_profile1 = 0, totalNasi_profile2 = 0, totalNasi_profile3 = 0, totalNasi_profile4 = 0;
 
 // MPU6050 Settings
 const uint8_t MPU6050_ADDR = 0x68;
@@ -125,8 +120,7 @@ float pitchWindow[SMOOTHING_WINDOW_SIZE];
 int smoothingIndex = 0;
 
 // State Variables (EDITED SOON)
-int ulang = 0, state = 0, cek_berat = 0;
-int centong = 0, adc = 0, simpan = 0, done_query = 0, waitUntilClick = 0;
+bool _isAware = false;
 int tanggal = 0, bulan = 0;
 
 // =========================================================================
@@ -195,4 +189,3 @@ int tanggal = 0, bulan = 0;
 #define GRAY 0xB5B6
 #define ORANGE 0xC260
 #define COLOR_2 0x22CE
-#define FROM_LEFT 10
