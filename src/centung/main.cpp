@@ -904,6 +904,7 @@ void taskMainLogicCode(void *pvParameters) {
                                 _isAware = true;
                                 currentState = STATE_MEASURING;
                             } else if (event.buttonId == 4) {
+                                _isAware = true;
                                 httpCmd = {1, sensorData.weight, sensorData.roll, sensorData.pitch, selectedProfile};
                                 xQueueSend(xHttpQueue, &httpCmd, 0);
                                 currentState = STATE_MEASURING;

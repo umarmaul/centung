@@ -87,12 +87,6 @@ int cah = 22;
 int seg = 0;
 long t = 0;
 
-// Shared Variables (Protected by Mutex)
-volatile float smoothedRoll = 0.0;
-volatile float smoothedPitch = 0.0;
-volatile float currentWeight = 0.0;
-volatile bool newDataReady = false;
-
 // Load Cell Variables
 const int calVal_eepromAdress = 0;
 const int tareOffsetVal_eepromAdress = 20;
