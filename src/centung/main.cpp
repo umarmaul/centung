@@ -141,6 +141,8 @@ void setup() {
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);  // Wait indefinitely for notification
 
     if (WiFi.status() == WL_CONNECTED) {
+        Serial.println("Calibration Value: " + String(calibrationValue));
+        Serial.println("Calibration Offset: " + String(calibrationOffset));
         xTaskCreatePinnedToCore(taskButtonCheckCode, "ButtonCheck", 2048, NULL, 1, &h_taskButtonCheck, 1);
         xTaskCreatePinnedToCore(taskSensorReadCode, "SensorRead", 4096, NULL, 2, &h_taskSensorRead, 1);
         xTaskCreatePinnedToCore(taskHttpRequestCode, "HttpRequest", 8192, NULL, 3, &h_taskHttpRequest, 1);
@@ -161,7 +163,7 @@ void setupEEPROM() {
     EEPROM.begin(512);
     EEPROM.get(calVal_eepromAdress, calibrationValue);
     if (isnan(calibrationValue)) {
-        calibrationValue = 1408.25;
+        calibrationValue = 1435.05;
     }
 
     EEPROM.get(tareOffsetVal_eepromAdress, calibrationOffset);
@@ -863,7 +865,7 @@ void taskMainLogicCode(void *pvParameters) {
                                 vTaskDelay(pdMS_TO_TICKS(100));
                                 digitalWrite(PIN_BUZZER, LOW);
                             } else if (event.buttonId == 3) {
-                                calibrationValue = 1408.25;
+                                calibrationValue = 1435.05;
                                 EEPROM.begin(512);
                                 EEPROM.put(calVal_eepromAdress, calibrationValue);
                                 EEPROM.commit();
@@ -1041,6 +1043,30 @@ void taskHttpRequestCode(void *pvParameters) {
                         digitalWrite(PIN_BUZZER, HIGH);
                         vTaskDelay(pdMS_TO_TICKS(100));
                         digitalWrite(PIN_BUZZER, LOW);
+                    } else {
+                        for (int i = 0; i < 3; i++) {
+                            digitalWrite(PIN_BUZZER, HIGH);
+                            vTaskDelay(pdMS_TO_TICKS(150));
+                            digitalWrite(PIN_BUZZER, LOW);
+                            vTaskDelay(pdMS_TO_TICKS(100));
+                        }
+                    }
+                    http.end();
+                } else if (cmd.type == 3) {  // research only for dataset
+                    http.begin(baseUrl + "research/create");
+                    http.addHeader("Content-Type", "application/json");
+                    http.addHeader("x-device-name", DEVICE_NAME);
+                    http.addHeader("x-device-password", DEVICE_PASSWORD);
+                    String payload = "{\"weight\":" + String(cmd.weight, 2) + ",\"roll\":" + String(cmd.roll, 2) + ",\"pitch\":" + String(cmd.pitch, 2) + ",\"profile_code\":\"" + cmd.profile_code + "\"}";
+
+                    int code = http.POST(payload);
+                    if (code == 201) {
+                        Serial.println("Research data sent successfully!");
+                        ledcSetup(1, 5000, 8);  // Set up PWM channel with lower frequency
+                        ledcAttachPin(PIN_BUZZER, 1);
+                        ledcWrite(1, 100);  // Set duty cycle to a lower value for softer sound
+                        vTaskDelay(pdMS_TO_TICKS(100));
+                        ledcWrite(1, 0);  // Turn off the buzzer
                     } else {
                         for (int i = 0; i < 3; i++) {
                             digitalWrite(PIN_BUZZER, HIGH);

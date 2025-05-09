@@ -39,7 +39,7 @@ struct ButtonEvent {
 };
 
 struct HttpCommand {
-    int type;  // 0: create log, 1: delete latest, 2: delete all today
+    int type;  // 0: create log, 1: delete latest, 2: delete all today, 3: research only for dataset
     float weight;
     float roll;
     float pitch;
@@ -91,7 +91,7 @@ long t = 0;
 const int calVal_eepromAdress = 0;
 const int tareOffsetVal_eepromAdress = 20;
 const int stabilizingtime = 2000;
-float calibrationValue = 1408.25;
+float calibrationValue = 1435.05;
 float calibrationOffset = 8434937.00;
 boolean _tare = true;
 

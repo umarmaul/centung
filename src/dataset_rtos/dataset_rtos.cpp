@@ -27,7 +27,7 @@ const char *profile_code = "prototype";
 // HX711 Settings
 const int calVal_eepromAdress = 0;          // Alamat EEPROM (jika digunakan)
 const int tareOffsetVal_eepromAdress = 20;  // Alamat EEPROM (jika digunakan)
-float calibrationValue = 1306.5337;         // Nilai kalibrasi Anda
+float calibrationValue = 1408.25;           // Nilai kalibrasi Anda
 unsigned long stabilizingtime = 2000;       // Waktu stabilisasi HX711
 HX711_ADC LoadCell(PIN_HX711_DATA, PIN_HX711_CLOCK);
 
