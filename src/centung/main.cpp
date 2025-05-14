@@ -3,6 +3,11 @@
 #include "config.h"
 #include "library.h"
 
+// Firebase config
+FirebaseData fbdo;
+FirebaseAuth auth;
+FirebaseConfig config;
+
 // Profile Variables
 String profile1_code = PROFILE_CODE_1;
 String profile2_code = PROFILE_CODE_2;
@@ -141,8 +146,17 @@ void setup() {
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);  // Wait indefinitely for notification
 
     if (WiFi.status() == WL_CONNECTED) {
-        Serial.println("Calibration Value: " + String(calibrationValue));
-        Serial.println("Calibration Offset: " + String(calibrationOffset));
+        config.api_key = API_KEY;
+        auth.user.email = USER_EMAIL;
+        auth.user.password = USER_PASSWORD;
+        config.token_status_callback = tokenStatusCallback;
+
+        Firebase.reconnectNetwork(false);
+        fbdo.setBSSLBufferSize(4096, 1024);
+        fbdo.setResponseSize(2048);
+
+        Firebase.begin(&config, &auth);
+
         xTaskCreatePinnedToCore(taskButtonCheckCode, "ButtonCheck", 2048, NULL, 1, &h_taskButtonCheck, 1);
         xTaskCreatePinnedToCore(taskSensorReadCode, "SensorRead", 4096, NULL, 2, &h_taskSensorRead, 1);
         xTaskCreatePinnedToCore(taskHttpRequestCode, "HttpRequest", 8192, NULL, 3, &h_taskHttpRequest, 1);
@@ -400,7 +414,6 @@ void progressBarScreen() {
         }
         progress_bar.pushToSprite(&loading_screen, 0, 0, BACKGROUND);
         loading_screen.pushSprite(0, 0);
-        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
@@ -1003,7 +1016,50 @@ void taskHttpRequestCode(void *pvParameters) {
                     String payload = "{\"weight\":" + String(cmd.weight, 2) + ",\"roll\":" + String(cmd.roll, 2) + ",\"pitch\":" + String(cmd.pitch, 2) + ",\"profile_code\":\"" + cmd.profile_code + "\"}";
 
                     int code = http.POST(payload);
+
+                    String response = http.getString();       // Get the response body
+                    http.end();
+
                     if (code == 201) {
+                        // Parse response to extract predicted weight
+                        DynamicJsonDocument doc(512);
+                        DeserializationError error = deserializeJson(doc, response);
+
+                        if (!error) {
+                            float predicted_weight = doc["data"]["weight"];
+                            String documentPath = "log_centung/" + doc["data"]["id"].as<String>();
+
+                            // Normal fields
+                            FirebaseJson content;
+                            content.set("fields/berat_nasi/doubleValue", predicted_weight);
+                            content.set("fields/device_id/stringValue", DEVICE_NAME);
+
+                            // Create the document without timestamp
+                            Firebase.Firestore.createDocument(&fbdo, FIREBASE_PROJECT_ID, "", documentPath.c_str(), content.raw());
+
+                            // Now do a transform write for server timestamp
+                            std::vector<struct firebase_firestore_document_write_t> writes;
+                            struct firebase_firestore_document_write_t transform_write;
+                            transform_write.type = firebase_firestore_document_write_type_transform;
+                            transform_write.document_transform.transform_document_path = documentPath;
+
+                            // Set timestamp using server time
+                            struct firebase_firestore_document_write_field_transforms_t field_transforms;
+                            field_transforms.fieldPath = "timestamp";
+                            field_transforms.transform_type = firebase_firestore_transform_type_set_to_server_value;
+                            field_transforms.transform_content = "REQUEST_TIME";
+
+                            // Push and commit
+                            transform_write.document_transform.field_transforms.push_back(field_transforms);
+                            writes.push_back(transform_write);
+
+                            if (Firebase.Firestore.commitDocument(&fbdo, FIREBASE_PROJECT_ID, "", writes, ""))
+                                Serial.printf("ok\n%s\n\n", fbdo.payload().c_str());
+                            else
+                                Serial.println(fbdo.errorReason());
+                        }
+
+                        // until here
                         digitalWrite(PIN_BUZZER, HIGH);
                         vTaskDelay(pdMS_TO_TICKS(100));
                         digitalWrite(PIN_BUZZER, LOW);
@@ -1015,7 +1071,7 @@ void taskHttpRequestCode(void *pvParameters) {
                             vTaskDelay(pdMS_TO_TICKS(100));
                         }
                     }
-                    http.end();
+
                 } else if (cmd.type == 1) {  // Delete latest
                     http.begin(baseUrl + "log/delete_latest?profile=" + cmd.profile_code);
                     http.addHeader("x-device-name", DEVICE_NAME);

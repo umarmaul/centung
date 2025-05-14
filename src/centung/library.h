@@ -3,12 +3,15 @@
 #include <ArduinoJson.h>
 #include <EEPROM.h>
 #include <ESP32Ping.h>
+#include <HTTPClient.h>
 #include <HX711_ADC.h>
 #include <SPI.h>
 #include <TFT_eSPI.h>
 #include <WiFiManager.h>
 #include <Wire.h>
-#include <HTTPClient.h>
+// edit if app is ready
+#include <Firebase_ESP_Client.h>
+#include <addons/TokenHelper.h>
 
 #include "FS.h"
 #include "OneButton.h"

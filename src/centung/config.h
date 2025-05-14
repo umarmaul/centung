@@ -14,6 +14,12 @@
 #define PROFILE_CODE_3 "A3"
 #define PROFILE_CODE_4 "A4"
 
+/*firebase*/
+#define API_KEY "AIzaSyAVdowkzs26fSi22a6vzQAI5zAkU5GUPtY"
+#define FIREBASE_PROJECT_ID "centung-aade6"
+#define USER_EMAIL "admin@admin.com"
+#define USER_PASSWORD "admin123"
+
 // =========================================================================
 // Enums and Structs
 // =========================================================================
